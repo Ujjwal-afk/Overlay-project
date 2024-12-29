@@ -1,4 +1,4 @@
-name: Build Kernel
+name: Build Kernel with IOCTL
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ jobs:
       CCACHE_NOHASHDIR: "true"
       CCACHE_MAXSIZE: "2G"
       CCACHE_HARDLINK: "true"
-      KERNEL_DEFCONFIG: "vendor/rmx3461_defconfig" # Adjust defconfig to your kernel
+      KERNEL_DEFCONFIG: "vendor/lahaina-qgki_defconfig"
       KERNEL_CMDLINE: "ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- O=out"
 
     steps:
@@ -56,7 +56,7 @@ jobs:
         tar -xzvf Clang-*.tar.gz -C zyc-clang >> /dev/null
 
     # Step 4: Build the kernel
-    - name: Build Kernel with ioctl implementation
+    - name: Build Kernel
       run: |
         export PATH=$(pwd)/zyc-clang/bin/:$PATH
         export CCACHE_DIR=$HOME/.cache/ccache
@@ -67,17 +67,25 @@ jobs:
         make -j$(nproc --all) $KERNEL_CMDLINE CC="ccache clang" LD=ld.lld
         cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3
 
-    # Step 5: Upload the kernel binary
+    # Step 5: Build IOCTL Module (Overlay)
+    - name: Build IOCTL Module
+      run: |
+        mkdir -p modules
+        cp path/to/overlay.c modules/
+        echo "obj-m += overlay.o" > modules/Makefile
+        make -C /lib/modules/$(uname -r)/build M=$(pwd)/modules ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules
+
+    # Step 6: Upload Kernel Binary
     - name: Upload Kernel
       uses: actions/upload-artifact@v4
       with:
         name: Built_Kernel
         path: "AnyKernel3/*"
 
-    # Step 6: Upload kernel module (for ioctl)
+    # Step 7: Upload Kernel Modules (including IOCTL module)
     - name: Upload Kernel Modules
       uses: actions/upload-artifact@v4
       if: always()
       with:
         name: Kernel_Modules
-        path: "./out/drivers/your_module_directory/*.ko"
+        path: "./modules/*.ko"
