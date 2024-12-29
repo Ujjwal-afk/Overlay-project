@@ -1,0 +1,64 @@
+name: Kernel Build Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step 1: Checkout the kernel source
+    - name: Checkout source
+      uses: actions/checkout@v3
+
+    # Step 2: Install dependencies
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev libelf-dev ccache aria2 curl git
+
+    # Step 3: Set up custom Clang
+    - name: Download and set up custom Clang
+      run: |
+        aria2c -j$(nproc --all) $(curl -fsSL https://github.com/ZyCromerZ/Clang/raw/main/Clang-main-link.txt)
+        mkdir zyc-clang
+        tar -xzvf Clang-*.tar.gz -C zyc-clang
+        export PATH=$PWD/zyc-clang/bin:$PATH
+
+    # Step 4: Prepare kernel build environment
+    - name: Configure environment variables
+      run: |
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export KBUILD_BUILD_USER=github
+        export KBUILD_BUILD_HOST=actions
+        export PATH=$PWD/zyc-clang/bin:$PATH
+        export CROSS_COMPILE=$PWD/zyc-clang/bin/aarch64-linux-gnu-
+        export CROSS_COMPILE_ARM32=$PWD/zyc-clang/bin/arm-linux-gnueabi-
+
+    # Step 5: Build the kernel
+    - name: Build the kernel
+      run: |
+        make O=out ARCH=arm64 rmx3461_defconfig
+        make -j$(nproc --all) O=out ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip
+
+    # Step 6: Upload artifacts (optional)
+    - name: Upload Kernel Image
+      if: success()
+      uses: actions/upload-artifact@v3
+      with:
+        name: Kernel Image
+        path: out/arch/arm64/boot/Image.gz-dtb
