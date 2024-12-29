@@ -1,64 +1,83 @@
-name: Kernel Build Pipeline
+name: Build Kernel
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_MAXSIZE: "2G"
+      CCACHE_HARDLINK: "true"
+      KERNEL_DEFCONFIG: "vendor/rmx3461_defconfig" # Adjust defconfig to your kernel
+      KERNEL_CMDLINE: "ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- O=out"
 
     steps:
     # Step 1: Checkout the kernel source
-    - name: Checkout source
-      uses: actions/checkout@v3
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: "true"
+        fetch-depth: 100
 
-    # Step 2: Install dependencies
-    - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y build-essential bc bison flex libssl-dev libncurses-dev libelf-dev ccache aria2 curl git
+    # Step 2: Set up ccache
+    - name: Set up ccache
+      uses: hendrikmuhs/ccache-action@v1.2
 
-    # Step 3: Set up custom Clang
-    - name: Download and set up custom Clang
+    # Step 3: Install dependencies and download custom Clang
+    - name: Install dependencies and set up Clang
       run: |
+        sudo apt-get update -y 
+        sudo apt-get install -y \
+          gcc-aarch64-linux-gnu \
+          gcc-arm-linux-gnueabi \
+          aria2 \
+          binutils \
+          make \
+          python3 \
+          libssl-dev \
+          build-essential \
+          bc \
+          bison \
+          flex \
+          unzip \
+          ca-certificates \
+          xz-utils \
+          mkbootimg \
+          cpio \
+          device-tree-compiler \
+          git \
+          git-lfs
+        # Download and set up Clang
         aria2c -j$(nproc --all) $(curl -fsSL https://github.com/ZyCromerZ/Clang/raw/main/Clang-main-link.txt)
         mkdir zyc-clang
-        tar -xzvf Clang-*.tar.gz -C zyc-clang
-        export PATH=$PWD/zyc-clang/bin:$PATH
+        tar -xzvf Clang-*.tar.gz -C zyc-clang >> /dev/null
 
-    # Step 4: Prepare kernel build environment
-    - name: Configure environment variables
+    # Step 4: Build the kernel
+    - name: Build Kernel with ioctl implementation
       run: |
+        export PATH=$(pwd)/zyc-clang/bin/:$PATH
+        export CCACHE_DIR=$HOME/.cache/ccache
         export ARCH=arm64
-        export SUBARCH=arm64
-        export KBUILD_BUILD_USER=github
-        export KBUILD_BUILD_HOST=actions
-        export PATH=$PWD/zyc-clang/bin:$PATH
-        export CROSS_COMPILE=$PWD/zyc-clang/bin/aarch64-linux-gnu-
-        export CROSS_COMPILE_ARM32=$PWD/zyc-clang/bin/arm-linux-gnueabi-
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+        make $KERNEL_DEFCONFIG
+        make -j$(nproc --all) $KERNEL_CMDLINE CC="ccache clang" LD=ld.lld
+        cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3
 
-    # Step 5: Build the kernel
-    - name: Build the kernel
-      run: |
-        make O=out ARCH=arm64 rmx3461_defconfig
-        make -j$(nproc --all) O=out ARCH=arm64 \
-            CC=clang \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip
-
-    # Step 6: Upload artifacts (optional)
-    - name: Upload Kernel Image
-      if: success()
-      uses: actions/upload-artifact@v3
+    # Step 5: Upload the kernel binary
+    - name: Upload Kernel
+      uses: actions/upload-artifact@v4
       with:
-        name: Kernel Image
-        path: out/arch/arm64/boot/Image.gz-dtb
+        name: Built_Kernel
+        path: "AnyKernel3/*"
+
+    # Step 6: Upload kernel module (for ioctl)
+    - name: Upload Kernel Modules
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: Kernel_Modules
+        path: "./out/drivers/your_module_directory/*.ko"
