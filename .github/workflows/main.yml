@@ -6,19 +6,19 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      KERNEL_DEFCONFIG: "vendor/rmx3461_defconfig" # Replace with your actual defconfig file
-      KERNEL_CMDLINE: "ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- O=out"
 
     steps:
-    # Step 1: Checkout the kernel source and driver files
+    # Step 1: Checkout your repo
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    # Step 2: Clone Kernel Source
     - name: Clone Kernel Source
       run: |
-        git clone https://github.com/Ujjwal-afk/kernel_oplus_RMX3461_-cocaine- kernel
-        cd kernel
-        git checkout $(git rev-parse --abbrev-ref HEAD) # Use default branch
+        git clone https://github.com/Ujjwal-afk/kernel_oplus_RMX3461_-cocaine- kernel_source
+        cd kernel_source && git checkout kernel-branch-name  # Replace 'kernel-branch-name' with the correct branch
 
-    # Step 2: Install dependencies
+    # Step 3: Install Dependencies
     - name: Install Dependencies
       run: |
         sudo apt-get update -y
@@ -34,41 +34,27 @@ jobs:
           ca-certificates \
           xz-utils \
           device-tree-compiler \
-          git \
-          git-lfs
-        curl -LSs "https://raw.githubusercontent.com/Poko-Apps/MemKernel/main/kernel/setup.sh" | bash -s M anrwt
+          git
 
-    # Step 3: Build the kernel
-    - name: Build Kernel
+    # Step 4: Build Kernel Module
+    - name: Build Kernel Module
       run: |
-        cd kernel
-        export PATH=$(pwd)/zyc-clang/bin:$PATH
-        make $KERNEL_DEFCONFIG $KERNEL_CMDLINE CC=clang LD=ld.lld
-        make -j$(nproc --all) $KERNEL_CMDLINE CC=clang LD=ld.lld
-        cp out/arch/arm64/boot/Image.gz-dtb ../AnyKernel3
+        export KDIR=$(pwd)/kernel_source
+        make -C $KDIR M=$(pwd) modules
 
-    # Step 4: Compile the overlay driver
-    - name: Compile Driver
-      run: |
-        cd kernel
-        export PATH=$(pwd)/zyc-clang/bin:$PATH
-        make M=$(pwd) modules
-
-    # Step 5: Set up AnyKernel3
-    - name: Clone AnyKernel3
+    # Step 5: Prepare AnyKernel3
+    - name: Setup AnyKernel3
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
         sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel3/anykernel.sh
         sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' AnyKernel3/anykernel.sh
         sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' AnyKernel3/anykernel.sh
         rm -rf AnyKernel3/.git* AnyKernel3/README.md
-        cp kernel/overlay.ko AnyKernel3/modules/
+        cp overlay.ko AnyKernel3/modules/
 
-    # Step 6: Upload built artifacts
-    - name: Upload Kernel & Driver
+    # Step 6: Upload Flashable Zip
+    - name: Upload Flashable Zip
       uses: actions/upload-artifact@v4
       with:
-        name: Built_Kernel_and_Driver
-        path: |
-          AnyKernel3/*
-          kernel/overlay.ko
+        name: Kernel_Driver_Zip
+        path: AnyKernel3/*
