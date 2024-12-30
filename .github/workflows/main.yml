@@ -1,4 +1,4 @@
-name: Build Kernel
+name: Build Kernel Driver
 
 on:
   workflow_dispatch:
@@ -7,50 +7,54 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
-      CCACHE_NOHASHDIR: "true"
-      CCACHE_MAXSIZE: "2G"
-      CCACHE_HARDLINK: "true"
-      KERNEL_DEFCONFIG: "vendor/rmx3461_defconfig" # Adjust defconfig based on your kernel source
+      KERNEL_DEFCONFIG: "vendor/rmx3461_defconfig" # Replace with your actual defconfig file
       KERNEL_CMDLINE: "ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- O=out"
 
     steps:
-    # Step 1: Checkout Kernel Source
-        - name: Clone Kernel Source
+    # Step 1: Checkout the kernel source and driver files
+    - name: Clone Kernel Source
       run: |
         git clone https://github.com/Ujjwal-afk/kernel_oplus_RMX3461_-cocaine- kernel
         cd kernel
+        git checkout $(git rev-parse --abbrev-ref HEAD) # Use default branch
 
-    # Step 2: Set up ccache
-    - name: Set up ccache
-      uses: hendrikmuhs/ccache-action@v1.2
-
-    # Step 3: Install dependencies
-    - name: Install dependencies
+    # Step 2: Install dependencies
+    - name: Install Dependencies
       run: |
-        sudo apt-get update -y 
+        sudo apt-get update -y
         sudo apt-get install -y \
           gcc-aarch64-linux-gnu \
           gcc-arm-linux-gnueabi \
-          aria2 \
-          binutils \
           make \
-          python3 \
           libssl-dev \
           build-essential \
           bc \
           bison \
           flex \
-          unzip \
           ca-certificates \
           xz-utils \
-          mkbootimg \
-          cpio \
           device-tree-compiler \
           git \
           git-lfs
+        curl -LSs "https://raw.githubusercontent.com/Poko-Apps/MemKernel/main/kernel/setup.sh" | bash -s M anrwt
 
-    # Step 4: Clone AnyKernel3
+    # Step 3: Build the kernel
+    - name: Build Kernel
+      run: |
+        cd kernel
+        export PATH=$(pwd)/zyc-clang/bin:$PATH
+        make $KERNEL_DEFCONFIG $KERNEL_CMDLINE CC=clang LD=ld.lld
+        make -j$(nproc --all) $KERNEL_CMDLINE CC=clang LD=ld.lld
+        cp out/arch/arm64/boot/Image.gz-dtb ../AnyKernel3
+
+    # Step 4: Compile the overlay driver
+    - name: Compile Driver
+      run: |
+        cd kernel
+        export PATH=$(pwd)/zyc-clang/bin:$PATH
+        make M=$(pwd) modules
+
+    # Step 5: Set up AnyKernel3
     - name: Clone AnyKernel3
       run: |
         git clone https://github.com/osm0sis/AnyKernel3
@@ -58,23 +62,13 @@ jobs:
         sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' AnyKernel3/anykernel.sh
         sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' AnyKernel3/anykernel.sh
         rm -rf AnyKernel3/.git* AnyKernel3/README.md
+        cp kernel/overlay.ko AnyKernel3/modules/
 
-    # Step 5: Build Kernel
-    - name: Build Kernel
-      run: |
-        cd kernel
-        export PATH=$(pwd)/zyc-clang/bin/:$PATH
-        export ARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-        make $KERNEL_DEFCONFIG
-        make -j$(nproc --all) $KERNEL_CMDLINE
-        cp out/arch/arm64/boot/Image.gz-dtb ../AnyKernel3
-
-    # Step 6: Upload Kernel
-    - name: Upload Kernel
+    # Step 6: Upload built artifacts
+    - name: Upload Kernel & Driver
       uses: actions/upload-artifact@v4
       with:
-        name: Built_Kernel
-        path: "AnyKernel3/*"
- 
+        name: Built_Kernel_and_Driver
+        path: |
+          AnyKernel3/*
+          kernel/overlay.ko
