@@ -16,7 +16,7 @@ jobs:
     - name: Clone Kernel Source
       run: |
         git clone https://github.com/Ujjwal-afk/kernel_oplus_RMX3461_-cocaine- kernel_source
-        cd kernel_source && git checkout kernel-branch-name  # Replace 'kernel-branch-name' with the correct branch
+        cd kernel_source && git checkout ice  # Replace 'kernel-branch-name' with the correct branch
 
     # Step 3: Install Dependencies
     - name: Install Dependencies
