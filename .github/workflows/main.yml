@@ -16,11 +16,10 @@ jobs:
 
     steps:
     # Step 1: Checkout Kernel Source
-    - name: Clone Kernel Source
+        - name: Clone Kernel Source
       run: |
         git clone https://github.com/Ujjwal-afk/kernel_oplus_RMX3461_-cocaine- kernel
         cd kernel
-        git checkout main # Use the appropriate branch if necessary
 
     # Step 2: Set up ccache
     - name: Set up ccache
