@@ -1,7 +1,16 @@
-name: Build Kernel Driver
+name: Build Kernel
 
 on:
   workflow_dispatch:
+  schedule:
+    # Runs every Saturday at 00:00 UTC
+    - cron: "0 0 * * 6"
+  push:
+    branches:
+      - HEAD
+  pull_request:
+    branches:
+      - HEAD
 
 jobs:
   build:
@@ -15,53 +24,69 @@ jobs:
       KERNEL_CMDLINE: "ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- O=out"
 
     steps:
-    # Step 1: Checkout your repo
-    - name: Checkout Repository
+    - name: Checkout
       uses: actions/checkout@v4
+      with:
+        submodules: "true"
+        fetch-depth: 100
 
-    # Step 2: Clone Kernel Source
-    - name: Clone Kernel Source
-      run: |
-        git clone https://github.com/Ujjwal-afk/kernel_oplus_RMX3461_-cocaine- kernel_source
-        cd kernel_source && git checkout ice  # Replace 'kernel-branch-name' with the correct branch
+    - name: Set up ccache
+      uses: hendrikmuhs/ccache-action@v1.2
 
-    # Step 3: Install Dependencies
-    - name: Install Dependencies
+    - name: Install dependencies
       run: |
-        sudo apt-get update -y
+        sudo apt-get update -y 
         sudo apt-get install -y \
           gcc-aarch64-linux-gnu \
           gcc-arm-linux-gnueabi \
+          aria2 \
+          binutils \
           make \
+          python3 \
           libssl-dev \
           build-essential \
           bc \
           bison \
           flex \
+          unzip \
           ca-certificates \
           xz-utils \
+          mkbootimg \
+          cpio \
           device-tree-compiler \
-          git
-
-    # Step 4: Build Kernel Module
-    - name: Build Kernel Module
-      run: |
-        export KDIR=$(pwd)/kernel_source
-        make -C $KDIR M=$(pwd) modules
-
-    # Step 5: Prepare AnyKernel3
-    - name: Setup AnyKernel3
-      run: |
+          git \
+          git-lfs
+        # Set up custom Clang
+        aria2c -j$(nproc --all) $(curl -fsSL https://github.com/ZyCromerZ/Clang/raw/main/Clang-main-link.txt)
+        mkdir zyc-clang
+        tar -xzvf Clang-*.tar.gz -C zyc-clang >> /dev/null
+        #mem module
+        curl -LSs "https://raw.githubusercontent/Ujjwal-afk/Overlay-project/blob/main/setup.sh" | bash -s M anrwt
+        # Clone AnyKernel3
         git clone https://github.com/osm0sis/AnyKernel3
         sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel3/anykernel.sh
         sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' AnyKernel3/anykernel.sh
         sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' AnyKernel3/anykernel.sh
         rm -rf AnyKernel3/.git* AnyKernel3/README.md
-        cp overlay.ko AnyKernel3/modules/
-
-    # Step 6: Upload Flashable Zip
-    - name: Upload Flashable Zip
+    - name: GetTime
+      id: get_time
+      run: |
+        echo "TIME=$(TZ=UTC+3 date +%s)" >> $GITHUB_OUTPUT
+    - name: Build Kernel
+      run: |
+        export PATH=$(pwd)/zyc-clang/bin/:$PATH
+        make $KERNEL_CMDLINE $KERNEL_DEFCONFIG CC="ccache clang" LD=ld.lld
+        make $KERNEL_CMDLINE CC="ccache clang" LD=ld.lld -j$(nproc --all)
+        cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3
+    - name: Upload Kernel
       uses: actions/upload-artifact@v4
       with:
-        name: Kernel_Driver_Zip
-        path: AnyKernel3/*
+        name: Nyan_kernel${{ steps.get_time.outputs.TIME }}
+        path: "AnyKernel3/*"
+
+    - name: Upload mem module
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: memodule
+        path: "./out/drivers/memkernel/anrwt_memk.ko"
