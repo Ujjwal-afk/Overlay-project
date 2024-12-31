@@ -1,0 +1,6 @@
+config OVERLAY
+    tristate "Overlay Kernel Driver"
+    default y
+    help
+      Overlay driver for kernel development.
+      Choose 'Y' to statically build into the kernel or 'M' to build as a loadable kernel module (LKM).
