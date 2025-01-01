@@ -1,14 +1,15 @@
 ifneq ($(KERNELRELEASE),)
-# kbuild part of Makefile
-	obj-$(CONFIG_OVERLAY)  := overlay.o
+# kbuild part of makefile
+obj-$(CONFIG_OVERLAY) := kernel.o
 else
-# normal Makefile
+# normal makefile
 default:
-	# Ensure KDIR is defined to point to the kernel source directory
+	# Assume kernel source is at KDIR or fail
 	ifeq ($(KDIR),)
 		$(error KDIR is not set. Please define KDIR to point to the kernel source directory.)
 	endif
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
+	make -C $(KDIR) M=$(PWD) modules
+
 clean:
 	rm -f *.ko *.o *.mod.o *.mod.c *.symvers .*.cmd
 endif
